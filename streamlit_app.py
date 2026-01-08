@@ -1,163 +1,166 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-from datetime import date, time
+from PIL import Image
+import io
 
-# 앱의 제목
-st.title("🎈 Streamlit Elements — 한 페이지 데모")
+# -------------------------------------------
+# 초등학교 곱셈 학습 웹 앱
+# 기능:
+# 1) 사용자가 두 숫자(행 x 열)를 입력하고 그림(또는 업로드 이미지)을 선택
+# 2) 선택된 그림으로 곱셈 결과를 시각화(격자 형태로 표시)
+# 3) 시각화 완료 후 계산 결과값을 입력하는 칸이 나타남
+# 4) 정답 여부를 표시
+# 5) 초기화 버튼으로 상태를 리셋
+# 모든 섹션에 학습용 설명(한국어 각주)을 추가했습니다.
+# -------------------------------------------
 
-# 간단한 설명 텍스트
+st.set_page_config(page_title="초등 곱셈 놀이", page_icon="🔢", layout="centered")
+
+st.title("🔢 초등 곱셈 학습 — 그림으로 배우는 곱셈")
+
 st.markdown("""
-이 페이지는 Streamlit에서 단일 페이지에 넣을 수 있는 주요 요소들을 **예시와 함께** 보여줍니다.
-각 섹션 위에 한국어 각주(주석)를 달아 공부하기 쉽게 만들었습니다.
+이 앱은 곱셈을 시각적으로 이해하도록 도와줍니다.
+1) 행(세로)과 열(가로)을 정하고
+2) 그림을 골라 `시각화` 버튼을 누르면 격자로 그림이 채워집니다.
+3) 그림을 보고 곱셈 결과(행 × 열)를 입력해 정답을 확인하세요.
+
+아래 각 항목의 주석을 읽으며 코드를 공부해보세요.
 """)
 
-# --------------------------------------------------
-# 텍스트 관련
-# --------------------------------------------------
-st.header("텍스트 요소들")
-# st.write는 다양한 타입(문자열, 숫자, HTML 등)을 자동으로 렌더링합니다.
-st.write("st.write: 일반 텍스트와 객체를 렌더링합니다.")
-st.markdown("st.markdown: Markdown 문법을 사용하여 서식을 적용합니다. **굵게**, *기울임* 등.")
-st.caption("st.caption: 보조 설명(작은 글씨)")
-st.subheader("subheader: 작은 제목")
-st.code("print('Hello Streamlit')")  # 코드 블록 예시
+# 세션 상태 초기화용 기본값 설정
+if "visualized" not in st.session_state:
+    st.session_state.visualized = False
+if "rows" not in st.session_state:
+    st.session_state.rows = 3
+if "cols" not in st.session_state:
+    st.session_state.cols = 4
+if "chosen_mode" not in st.session_state:
+    st.session_state.chosen_mode = "이모지"
+if "uploaded_img" not in st.session_state:
+    st.session_state.uploaded_img = None
+if "correct_answer" not in st.session_state:
+    st.session_state.correct_answer = None
+if "checked" not in st.session_state:
+    st.session_state.checked = False
 
-# Latex 수식
-st.latex(r"E = mc^2")
+# ----------------------
+# 입력: 행/열, 그림 선택
+# ----------------------
+st.subheader("1) 문제 설정")
+# 숫자 입력: 행(세로)과 열(가로)을 정함
+# 초등학생 학습용으로 너무 큰 숫자는 피하도록 범위 제한
+rows = st.number_input("행(세로) 수", min_value=1, max_value=12, value=st.session_state.rows, key="rows_input")
+cols = st.number_input("열(가로) 수", min_value=1, max_value=12, value=st.session_state.cols, key="cols_input")
 
-# --------------------------------------------------
-# 기본 위젯들
-# --------------------------------------------------
-st.header("입력 위젯들")
+# 그림 선택: 간단한 이모지 모음이나 이미지 업로드 선택
+st.write("그림 선택 (미리보기 포함)")
+mode = st.radio("표시 방식 선택", ("이모지", "이미지 URL(사과/별)", "업로드 이미지"), index=0, key="mode_radio")
 
-st.write("버튼, 체크박스, 라디오, 셀렉트박스, 멀티셀렉트 등")
+# 몇 가지 이미지 URL 샘플 제공 (외부이미지 사용시 네트워크 필요)
+sample_urls = {
+    "사과": "https://upload.wikimedia.org/wikipedia/commons/1/15/Red_Apple.jpg",
+    "별": "https://upload.wikimedia.org/wikipedia/commons/1/18/Five-pointed_star.svg"
+}
 
-if st.button("클릭 버튼 (st.button)"):
-    st.success("버튼을 클릭했습니다!")
+uploaded_file = None
+chosen_emoji = "🍎"
+chosen_url = None
 
-agree = st.checkbox("체크박스 (st.checkbox)")
-st.write("체크 여부:", agree)
+if mode == "이모지":
+    # 간단한 이모지 선택
+    chosen_emoji = st.selectbox("이모지 선택", ("🍎 사과", "⭐ 별", "🐶 강아지", "🍪 쿠키"))
+    # 선택된 텍스트에서 실제 이모지만 추출
+    chosen_emoji = chosen_emoji.split()[0]
+    st.caption("이모지는 텍스트로 렌더링되며 크기는 브라우저/OS에 따라 다릅니다.")
+elif mode == "이미지 URL(사과/별)":
+    # 이미지 URL 선택
+    sel = st.selectbox("샘플 이미지 선택", ("사과", "별"))
+    chosen_url = sample_urls[sel]
+    st.image(chosen_url, width=80, caption=f"샘플: {sel}")
+else:
+    # 업로드된 이미지를 저장
+    uploaded_file = st.file_uploader("이미지 업로드 (투명배경 권장)", type=["png", "jpg", "jpeg"])
+    if uploaded_file is not None:
+        # PIL로 읽어서 세션에 보관
+        st.session_state.uploaded_img = Image.open(io.BytesIO(uploaded_file.read()))
+        st.image(st.session_state.uploaded_img, width=120, caption="업로드된 이미지 미리보기")
 
-choice = st.radio("라디오 선택 (st.radio)", ("옵션 A", "옵션 B", "옵션 C"))
-st.write("선택:", choice)
-
-sel = st.selectbox("셀렉트박스 (st.selectbox)", ["사과", "바나나", "체리"])  # 단일 선택
-st.write("선택된 과일:", sel)
-
-multi = st.multiselect("멀티셀렉트 (st.multiselect)", ["파이썬","자바스크립트","러스트"], default=["파이썬"])  # 다중 선택
-st.write("관심있는 언어:", multi)
-
-# 숫자/텍스트 입력
-num = st.number_input("숫자 입력 (st.number_input)", min_value=0, max_value=100, value=10)
-st.write("입력된 숫자:", num)
-
-text = st.text_input("텍스트 입력 (st.text_input)", value="안녕하세요")
-st.write("입력된 텍스트:", text)
-
-password = st.text_input("비밀번호(보이기/숨기기)", type="password")
-# 날짜/시간
-dt = st.date_input("날짜 선택 (st.date_input)", value=date.today())
-st.write("선택된 날짜:", dt)
-tm = st.time_input("시간 선택 (st.time_input)", value=time(12, 30))
-st.write("선택된 시간:", tm)
-
-# 파일 업로드
-uploaded = st.file_uploader("파일 업로드 (st.file_uploader)")
-if uploaded:
-    st.write("업로드된 파일 이름:", uploaded.name)
-
-# --------------------------------------------------
-# 레이아웃: 컬럼/탭/폼
-# --------------------------------------------------
-st.header("레이아웃 & 컨테이너")
-
-col1, col2 = st.columns(2)
+# ----------------------
+# 시각화 버튼: 격자 표시
+# ----------------------
+st.subheader("2) 시각화")
+col1, col2 = st.columns([1, 1])
 with col1:
-    st.metric("온도", "21°C", delta="+1.2°C")  # 지표 위젯
+    if st.button("시각화"):
+        # 입력값을 세션 상태에 저장하고 정답(행*열)을 계산
+        st.session_state.rows = int(rows)
+        st.session_state.cols = int(cols)
+        st.session_state.chosen_mode = mode
+        st.session_state.correct_answer = st.session_state.rows * st.session_state.cols
+        st.session_state.visualized = True
+        st.session_state.checked = False
 with col2:
-    st.metric("습도", "60%", delta="-2%")
+    # 초기화 버튼: 세션 상태를 초기값으로 되돌리고 페이지 재실행
+    if st.button("초기화"):
+        st.session_state.visualized = False
+        st.session_state.rows = 3
+        st.session_state.cols = 4
+        st.session_state.chosen_mode = "이모지"
+        st.session_state.uploaded_img = None
+        st.session_state.correct_answer = None
+        st.session_state.checked = False
+        st.experimental_rerun()
 
-tabs = st.tabs(["Tab A", "Tab B"])
-with tabs[0]:
-    st.write("첫 번째 탭 내용")
-with tabs[1]:
-    st.write("두 번째 탭 내용")
+# ----------------------
+# 시각화 출력 영역
+# ----------------------
+if st.session_state.visualized:
+    st.markdown(f"**{st.session_state.rows} × {st.session_state.cols} = ?**  — 아래 그림을 보고 정답을 입력하세요.")
 
-with st.expander("폼 예시 (st.form)"):
-    with st.form("my_form"):
-        name = st.text_input("이름")
-        age = st.number_input("나이", min_value=0, max_value=120)
-        submitted = st.form_submit_button("제출")
-        if submitted:
-            st.write(f"{name}님, 나이 {age} 등록 완료")
+    # 격자 형태로 그림을 출력: 행 수만큼 반복해서 각 행에 'cols'개의 열 생성
+    for r in range(st.session_state.rows):
+        cols_objs = st.columns(st.session_state.cols)
+        for c_idx, col_obj in enumerate(cols_objs):
+            if st.session_state.chosen_mode == "이모지":
+                # 이모지는 텍스트로 출력
+                col_obj.markdown(f"<div style='font-size:40px; text-align:center'>{chosen_emoji}</div>", unsafe_allow_html=True)
+            elif st.session_state.chosen_mode == "이미지 URL(사과/별)":
+                # 외부 URL 이미지 출력
+                col_obj.image(chosen_url, use_column_width=True)
+            else:
+                # 업로드 이미지 출력
+                if st.session_state.uploaded_img is not None:
+                    col_obj.image(st.session_state.uploaded_img, use_column_width=True)
+                else:
+                    col_obj.write("(업로드된 이미지 없음)")
 
-# --------------------------------------------------
-# 미디어: 이미지/오디오/비디오
-# --------------------------------------------------
-st.header("미디어")
-st.write("이미지, 오디오, 비디오를 렌더링합니다.")
-st.image(
-    "https://docs.streamlit.io/images/brand/streamlit-mark-color.png",
-    width=120,
-)
+    # ----------------------
+    # 정답 입력 및 확인
+    # ----------------------
+    st.subheader("3) 정답 입력")
+    # 사용자의 정답 입력란 (정수만 받도록 설정)
+    user_ans = st.number_input("곱셈 결과를 입력하세요", min_value=0, step=1, key="user_ans_input")
+    if st.button("정답 확인"):
+        st.session_state.checked = True
+        if st.session_state.correct_answer is not None and int(user_ans) == st.session_state.correct_answer:
+            st.success(f"정답입니다!  {st.session_state.rows} × {st.session_state.cols} = {st.session_state.correct_answer}")
+        else:
+            st.error(f"틀렸습니다. 다시 확인해보세요. (정답은 {st.session_state.correct_answer} 입니다)")
 
-# 간단한 오디오/비디오(외부 URL 혹은 바이너리 데이터)
-# st.audio(...), st.video(...)
+    # 힌트 토글: 학생용 힌트(행×열을 세어보는 방법 안내)
+    with st.expander("힌트 보기"):
+        st.write("그림을 가로로 몇 개, 세로로 몇 개인지 세어보세요. 예: 3행 × 4열 = 각 행에 4개씩, 총 12개")
 
-# --------------------------------------------------
-# 데이터 표시: dataframe, table
-# --------------------------------------------------
-st.header("데이터 시각화 & 표")
-df = pd.DataFrame(np.random.randn(20, 3), columns=["a", "b", "c"])  # 예시 데이터프레임
-st.dataframe(df)  # 대화형 표
-st.table(df.head())  # 정적 표
+else:
+    st.info("왼쪽에서 숫자와 그림을 선택한 후 '시각화' 버튼을 눌러 시작하세요.")
 
-# 차트: 라인/바/영역 차트 (내장)
-st.line_chart(df)
-st.bar_chart(df)
-
-# 지도: 간단한 lat/lon 표시
-map_df = pd.DataFrame(
-    np.random.randn(100, 2) / [50, 50] + [37.55, 126.97], columns=["lat", "lon"]
-)
-st.map(map_df)
-
-# --------------------------------------------------
-# 진행 상태/대기 UI
-# --------------------------------------------------
-st.header("상태표시 및 애니메이션")
-with st.spinner("처리 중..."):
-    # 실제로는 시간이 걸리는 작업을 여기에 둡니다.
-    pass
-
-progress = st.progress(0)
-for i in range(100):
-    progress.progress(i + 1)
-
-st.balloons()
-
-# --------------------------------------------------
-# 고급: 플로팅 HTML, 플롯 라이브러리 연동 예시
-# --------------------------------------------------
-st.header("고급 위젯 및 외부 라이브러리 연동")
-st.write("Plotly, Altair, Matplotlib 등과 쉽게 연동됩니다.")
-
-import altair as alt
-chart = alt.Chart(df.reset_index()).mark_line().encode(x="index", y="a")
-st.altair_chart(chart, use_container_width=True)
-
-# --------------------------------------------------
-# 학습용 팁 (각주 형식)
-# --------------------------------------------------
+# ----------------------
+# 하단: 학습 팁 및 코드 주석 안내
+# ----------------------
 st.markdown("""
-**학습 팁:**
-- 각 `st.` 함수는 화면에 UI를 추가합니다. 함수 호출 순서가 위에서 아래로 렌더링 순서가 됩니다.
-- 위젯(입력)은 상태(state)를 가지므로 사용자의 상호작용에 따라 재실행(re-run)됩니다.
-- 복잡한 레이아웃은 `columns`, `tabs`, `container`, `expander` 등을 조합해 만듭니다.
-- 외부 라이브러리로 만든 Figure 객체는 `st.pyplot`, `st.plotly_chart`, `st.altair_chart` 등으로 표시합니다.
+---
+**코드 학습 팁 (각주):**
+- `st.session_state`를 사용하면 버튼 클릭 등으로 발생한 상태를 페이지 전역에서 유지할 수 있습니다.
+- `st.columns()`를 사용하면 행 내에 여러 열을 만들 수 있어 격자 레이아웃을 쉽게 구성할 수 있습니다.
+- 이미지 업로드는 `st.file_uploader`로 받고, `PIL.Image`로 읽어 `st.image`에 전달합니다.
+- `st.experimental_rerun()`은 상태 재설정 후 페이지를 즉시 다시 실행할 때 유용합니다.
 """)
-
-st.info("이 페이지의 코드를 읽고, 각 섹션을 차례로 실행해 보세요.")
-
-# 끝
